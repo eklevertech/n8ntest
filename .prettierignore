@@ -11,6 +11,7 @@ packages/cli/templates/form-trigger-404.handlebars
 cypress/fixtures
 CHANGELOG.md
 .github/pull_request_template.md
+packages/payroll
 # Ignored for now
 **/*.md
 # Handled by biome

@@ -1,0 +1,257 @@
+// Payroll & Employee Management - Puerto Rico
+// Postgres + Prisma schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  HR
+  EMPLOYEE
+}
+
+enum EmployeeType {
+  SALARIED
+  HOURLY
+  CONTRACTOR
+}
+
+enum EmployeeStatus {
+  ACTIVE
+  ON_LEAVE
+  TERMINATED
+}
+
+enum FilingStatus {
+  SINGLE
+  MARRIED_JOINT
+  MARRIED_SEPARATE
+  HEAD_OF_HOUSEHOLD
+}
+
+enum PayPeriodStatus {
+  OPEN
+  PROCESSING
+  PAID
+}
+
+enum TimeEntryStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum PtoType {
+  VACATION
+  SICK
+  PERSONAL
+  UNPAID
+}
+
+enum PtoStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+enum BonusType {
+  BONUS
+  COMMISSION
+  REIMBURSEMENT
+}
+
+model User {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  name         String
+  passwordHash String
+  role         Role      @default(EMPLOYEE)
+  employee     Employee?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+}
+
+model Employee {
+  id             String         @id @default(cuid())
+  employeeNumber String         @unique
+  user           User?          @relation(fields: [userId], references: [id], onDelete: SetNull)
+  userId         String?        @unique
+
+  firstName      String
+  lastName       String
+  email          String         @unique
+  phone          String?
+  address        String?
+  city           String?
+  zipCode        String?
+
+  // SSN encrypted in real app; stored as plain string here for demo
+  ssn            String?
+  dateOfBirth    DateTime?
+
+  hireDate       DateTime
+  terminationDate DateTime?
+  status         EmployeeStatus @default(ACTIVE)
+  jobTitle       String?
+  department     String?
+
+  employeeType   EmployeeType
+  // For SALARIED: annual salary; For HOURLY: hourly rate; For CONTRACTOR: hourly or per-job
+  annualSalary   Decimal?       @db.Decimal(12, 2)
+  hourlyRate     Decimal?       @db.Decimal(10, 4)
+
+  // Tax info (PR)
+  filingStatus   FilingStatus   @default(SINGLE)
+  // Personal exemption claimed (each $1,500 in PR per dependent etc.) — simplified
+  exemptions     Int            @default(0)
+  // Additional withholding per period (employee voluntary)
+  extraWithholding Decimal      @db.Decimal(10, 2) @default(0)
+
+  // Accrued PTO balance in days
+  ptoBalance     Decimal        @db.Decimal(6, 2) @default(0)
+
+  timeEntries    TimeEntry[]
+  payStubs       PayStub[]
+  bonuses        Bonus[]
+  ptoRequests    PtoRequest[]
+
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  @@index([status])
+  @@index([department])
+}
+
+model PayPeriod {
+  id          String          @id @default(cuid())
+  startDate   DateTime
+  endDate     DateTime
+  payDate     DateTime
+  status      PayPeriodStatus @default(OPEN)
+  payrollRun  PayrollRun?
+  bonuses     Bonus[]
+
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  @@unique([startDate, endDate])
+  @@index([status])
+}
+
+model TimeEntry {
+  id          String          @id @default(cuid())
+  employee    Employee        @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  employeeId  String
+  date        DateTime        @db.Date
+  clockIn     DateTime
+  clockOut    DateTime?
+  // Computed hours (regular + overtime are derived per-period)
+  hours       Decimal?        @db.Decimal(6, 2)
+  notes       String?
+  status      TimeEntryStatus @default(PENDING)
+
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  @@index([employeeId, date])
+}
+
+model PayrollRun {
+  id           String     @id @default(cuid())
+  payPeriod    PayPeriod  @relation(fields: [payPeriodId], references: [id], onDelete: Cascade)
+  payPeriodId  String     @unique
+  processedAt  DateTime   @default(now())
+  processedBy  String
+  totalGross   Decimal    @db.Decimal(14, 2) @default(0)
+  totalNet     Decimal    @db.Decimal(14, 2) @default(0)
+  totalTaxes   Decimal    @db.Decimal(14, 2) @default(0)
+
+  payStubs     PayStub[]
+}
+
+model PayStub {
+  id              String       @id @default(cuid())
+  payrollRun      PayrollRun   @relation(fields: [payrollRunId], references: [id], onDelete: Cascade)
+  payrollRunId    String
+  employee        Employee     @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  employeeId      String
+
+  // Earnings
+  regularHours    Decimal      @db.Decimal(6, 2)  @default(0)
+  overtimeHours   Decimal      @db.Decimal(6, 2)  @default(0)
+  regularPay      Decimal      @db.Decimal(12, 2) @default(0)
+  overtimePay     Decimal      @db.Decimal(12, 2) @default(0)
+  bonusPay        Decimal      @db.Decimal(12, 2) @default(0)
+  commissionPay   Decimal      @db.Decimal(12, 2) @default(0)
+  reimbursements  Decimal      @db.Decimal(12, 2) @default(0)
+  grossPay        Decimal      @db.Decimal(12, 2) @default(0)
+
+  // PR Deductions (employee side)
+  prIncomeTax     Decimal      @db.Decimal(12, 2) @default(0)
+  socialSecurity  Decimal      @db.Decimal(12, 2) @default(0)
+  medicare        Decimal      @db.Decimal(12, 2) @default(0)
+  sinotEmployee   Decimal      @db.Decimal(12, 2) @default(0)
+  extraWithheld   Decimal      @db.Decimal(12, 2) @default(0)
+  totalDeductions Decimal      @db.Decimal(12, 2) @default(0)
+
+  netPay          Decimal      @db.Decimal(12, 2) @default(0)
+
+  // Employer-side (informational, not deducted from net)
+  employerSS      Decimal      @db.Decimal(12, 2) @default(0)
+  employerMedicare Decimal     @db.Decimal(12, 2) @default(0)
+  employerSinot   Decimal      @db.Decimal(12, 2) @default(0)
+
+  // YTD snapshots at time of run
+  ytdGross        Decimal      @db.Decimal(14, 2) @default(0)
+  ytdNet          Decimal      @db.Decimal(14, 2) @default(0)
+  ytdPrIncomeTax  Decimal      @db.Decimal(14, 2) @default(0)
+  ytdSocialSecurity Decimal    @db.Decimal(14, 2) @default(0)
+  ytdMedicare     Decimal      @db.Decimal(14, 2) @default(0)
+
+  createdAt       DateTime     @default(now())
+
+  @@unique([payrollRunId, employeeId])
+  @@index([employeeId])
+}
+
+model Bonus {
+  id           String     @id @default(cuid())
+  employee     Employee   @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  employeeId   String
+  payPeriod    PayPeriod  @relation(fields: [payPeriodId], references: [id], onDelete: Cascade)
+  payPeriodId  String
+  type         BonusType  @default(BONUS)
+  amount       Decimal    @db.Decimal(12, 2)
+  description  String?
+  createdAt    DateTime   @default(now())
+
+  @@index([employeeId])
+  @@index([payPeriodId])
+}
+
+model PtoRequest {
+  id          String    @id @default(cuid())
+  employee    Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  employeeId  String
+  startDate   DateTime  @db.Date
+  endDate     DateTime  @db.Date
+  days        Decimal   @db.Decimal(6, 2)
+  type        PtoType   @default(VACATION)
+  status      PtoStatus @default(PENDING)
+  reason      String?
+  reviewedBy  String?
+  reviewedAt  DateTime?
+  reviewNote  String?
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([employeeId, status])
+}
