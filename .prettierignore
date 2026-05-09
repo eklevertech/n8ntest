@@ -10,6 +10,7 @@ packages/cli/templates/form-trigger-409.handlebars
 packages/cli/templates/form-trigger-404.handlebars
 cypress/fixtures
 CHANGELOG.md
+packages/payroll
 .github/pull_request_template.md
 # Ignored for now
 **/*.md
