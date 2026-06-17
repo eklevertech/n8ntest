@@ -43,6 +43,8 @@ export default async function CameraPage({
             intervalSec={camera.captureIntervalSec}
             framesPerAnalysis={camera.framesPerAnalysis}
             frameSpacingMs={camera.frameSpacingMs}
+            motionDetectionEnabled={camera.motionDetectionEnabled}
+            motionThreshold={camera.motionThreshold}
           />
         </div>
         <div className="card">
@@ -73,6 +75,14 @@ export default async function CameraPage({
             Secuencia de <strong>{camera.framesPerAnalysis}</strong> fotograma(s) cada{" "}
             <strong>{camera.captureIntervalSec}s</strong> · separación{" "}
             {camera.frameSpacingMs} ms
+          </p>
+          <p className="meta">
+            Pre-filtro de movimiento:{" "}
+            {camera.motionDetectionEnabled ? (
+              <>activo (umbral {camera.motionThreshold}%)</>
+            ) : (
+              "desactivado"
+            )}
           </p>
         </div>
       </div>

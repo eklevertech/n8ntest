@@ -54,6 +54,8 @@ export async function POST(req: Request) {
     captureIntervalSec: Math.max(2, body.captureIntervalSec ?? 8),
     framesPerAnalysis: clamp(body.framesPerAnalysis ?? 4, 1, MAX_FRAMES_PER_ANALYSIS),
     frameSpacingMs: clamp(body.frameSpacingMs ?? 700, 200, 3000),
+    motionDetectionEnabled: body.motionDetectionEnabled ?? true,
+    motionThreshold: Math.max(0.1, Math.min(100, body.motionThreshold ?? 1.5)),
   });
 
   return NextResponse.json({ camera }, { status: 201 });

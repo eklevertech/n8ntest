@@ -11,7 +11,9 @@ nueva (Next.js + TypeScript), independiente del resto del repo.
 
 ```
 Navegador (webcam o URL de video)
-   │  cada ciclo captura una SECUENCIA de N fotogramas (ráfaga, canvas → JPEG base64)
+   │  pre-filtro de movimiento (diff de cuadros en grises a baja resolución)
+   │     └─ sin cambios → omite el ciclo (ahorra tokens)
+   │  con cambios → captura una SECUENCIA de N fotogramas (ráfaga, JPEG base64)
    ▼
 POST /api/cameras/:id/analyze  { frames: [...] }
    │  envía la secuencia a Claude (visión) junto con las reglas en lenguaje natural
@@ -31,6 +33,10 @@ Registro de eventos (panel + /events)
   y la acción, no sobre imágenes sueltas. Configurable por cámara
   (`framesPerAnalysis`, `frameSpacingMs`). Modelo por defecto `claude-opus-4-8`;
   configurable con `DETECTION_MODEL`.
+- **Pre-filtro de movimiento:** `src/components/LiveMonitor.tsx` compara cada cuadro
+  con el anterior (escala de grises a 96×54) y solo dispara la llamada a la IA cuando
+  el % de píxeles que cambian supera `motionThreshold`. Evita gastar tokens en escenas
+  estáticas. Configurable/desactivable por cámara; el panel muestra analizados vs. omitidos.
 - **Notificaciones:** `src/lib/notify/*` — cada canal funciona con credenciales
   reales o en **modo simulación** (escribe en consola) si no las hay, para que el
   MVP corra sin cuentas de pago.
@@ -71,9 +77,10 @@ Abre el panel, crea una cámara con sus reglas y pulsa **Iniciar monitoreo**
 - **Autenticación y multi-tenant:** hoy hay una única cuenta demo; añadir login
   (Auth.js/Clerk) y aislamiento por organización.
 - **Cobro:** integrar Stripe Billing (checkout + webhooks) para activar planes.
-- **Coste/latencia de IA:** para alto volumen, usar detección por movimiento como
-  pre-filtro y reservar la llamada al VLM solo a frames con cambios; considerar
-  `claude-haiku-4-5`/`claude-sonnet-4-6` vía `DETECTION_MODEL`.
+- **Coste/latencia de IA:** el pre-filtro de movimiento ya reserva la llamada al VLM
+  para escenas con cambios. A mayor escala, considerar además `claude-haiku-4-5` /
+  `claude-sonnet-4-6` vía `DETECTION_MODEL`, y mover el pre-filtro al servidor cuando
+  la ingesta deje de ser en navegador.
 - **Privacidad/legal:** retención de grabaciones, consentimiento y normativa local
   de videovigilancia.
 

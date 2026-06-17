@@ -22,19 +22,30 @@ const SEV_CLASS: Record<string, string> = {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+// Resolución reducida del pre-filtro de movimiento y umbral de diferencia por píxel.
+const MOTION_W = 96;
+const MOTION_H = 54;
+const PIXEL_DIFF_THRESHOLD = 24; // sobre 0-255 en escala de grises
+
 export function LiveMonitor({
   cameraId,
   intervalSec,
   framesPerAnalysis = 4,
   frameSpacingMs = 700,
+  motionDetectionEnabled = true,
+  motionThreshold = 1.5,
 }: {
   cameraId: string;
   intervalSec: number;
   framesPerAnalysis?: number;
   frameSpacingMs?: number;
+  motionDetectionEnabled?: boolean;
+  motionThreshold?: number;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const motionCanvasRef = useRef<HTMLCanvasElement>(null);
+  const prevGrayRef = useRef<Uint8ClampedArray | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const busyRef = useRef(false);
 
@@ -46,6 +57,8 @@ export function LiveMonitor({
   const [status, setStatus] = useState<string>("Detenido");
   const [error, setError] = useState<string | null>(null);
   const [pushState, setPushState] = useState<string>("");
+  const [lastMotion, setLastMotion] = useState<number | null>(null);
+  const [stats, setStats] = useState({ analyzed: 0, skipped: 0 });
 
   const stopStream = useCallback(() => {
     const video = videoRef.current;
@@ -73,6 +86,41 @@ export function LiveMonitor({
     return canvas.toDataURL("image/jpeg", 0.7);
   }, []);
 
+  /**
+   * Pre-filtro de movimiento: dibuja el frame actual a baja resolución, lo pasa a
+   * escala de grises y lo compara con el cuadro de referencia anterior. Devuelve el
+   * % de píxeles que cambiaron por encima del umbral, o null si no se pudo medir.
+   * Actualiza siempre la referencia para que el movimiento sea relativo al último chequeo.
+   */
+  const checkMotion = useCallback((): number | null => {
+    const video = videoRef.current;
+    const canvas = motionCanvasRef.current;
+    if (!video || !canvas || video.readyState < 2) return null;
+    canvas.width = MOTION_W;
+    canvas.height = MOTION_H;
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    if (!ctx) return null;
+    ctx.drawImage(video, 0, 0, MOTION_W, MOTION_H);
+    const { data } = ctx.getImageData(0, 0, MOTION_W, MOTION_H);
+    const n = MOTION_W * MOTION_H;
+    const gray = new Uint8ClampedArray(n);
+    for (let i = 0; i < n; i++) {
+      const j = i * 4;
+      // Luminancia aproximada.
+      gray[i] = (data[j] * 77 + data[j + 1] * 150 + data[j + 2] * 29) >> 8;
+    }
+
+    const prev = prevGrayRef.current;
+    prevGrayRef.current = gray;
+    if (!prev) return null; // primer cuadro: solo establece la referencia
+
+    let changed = 0;
+    for (let i = 0; i < n; i++) {
+      if (Math.abs(gray[i] - prev[i]) > PIXEL_DIFF_THRESHOLD) changed++;
+    }
+    return (changed / n) * 100;
+  }, []);
+
   const captureAndAnalyze = useCallback(async () => {
     if (busyRef.current) return; // evita solapamiento si la captura/IA tarda
     const video = videoRef.current;
@@ -97,6 +145,7 @@ export function LiveMonitor({
       }
 
       setStatus(`Analizando secuencia (${frames.length} fotogramas)…`);
+      setStats((s) => ({ ...s, analyzed: s.analyzed + 1 }));
       const res = await fetch(`/api/cameras/${cameraId}/analyze`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -126,6 +175,32 @@ export function LiveMonitor({
     }
   }, [cameraId, captureFrame, framesPerAnalysis, frameSpacingMs]);
 
+  /**
+   * Un ciclo: si el pre-filtro de movimiento está activo, mide el cambio y solo
+   * lanza el análisis por IA cuando supera el umbral (ahorra tokens en escenas
+   * estáticas). El primer ciclo (force) siempre analiza para tener una lectura inicial.
+   */
+  const tick = useCallback(
+    async (force = false) => {
+      if (busyRef.current) return;
+      const score = checkMotion();
+      if (score !== null) setLastMotion(score);
+
+      const shouldAnalyze =
+        force || !motionDetectionEnabled || score === null || score >= motionThreshold;
+
+      if (!shouldAnalyze) {
+        setStats((s) => ({ ...s, skipped: s.skipped + 1 }));
+        setStatus(
+          `Sin movimiento (${score!.toFixed(1)}% < ${motionThreshold}%) — análisis omitido`,
+        );
+        return;
+      }
+      await captureAndAnalyze();
+    },
+    [checkMotion, motionDetectionEnabled, motionThreshold, captureAndAnalyze],
+  );
+
   const start = useCallback(async () => {
     setError(null);
     const video = videoRef.current;
@@ -147,17 +222,21 @@ export function LiveMonitor({
       return;
     }
 
+    prevGrayRef.current = null;
+    setStats({ analyzed: 0, skipped: 0 });
+    setLastMotion(null);
     setRunning(true);
     setStatus("En vivo");
-    // Primer análisis inmediato, luego en intervalos.
-    void captureAndAnalyze();
-    timerRef.current = setInterval(captureAndAnalyze, Math.max(2, intervalSec) * 1000);
-  }, [source, videoUrl, intervalSec, captureAndAnalyze, stopStream]);
+    // Primer ciclo inmediato (siempre analiza), luego por intervalos con pre-filtro.
+    void tick(true);
+    timerRef.current = setInterval(() => void tick(false), Math.max(2, intervalSec) * 1000);
+  }, [source, videoUrl, intervalSec, tick, stopStream]);
 
   const stop = useCallback(() => {
     if (timerRef.current) clearInterval(timerRef.current);
     timerRef.current = null;
     stopStream();
+    prevGrayRef.current = null;
     const video = videoRef.current;
     if (video) video.removeAttribute("src"), video.load();
     setRunning(false);
@@ -212,6 +291,7 @@ export function LiveMonitor({
         </div>
       </div>
       <canvas ref={canvasRef} style={{ display: "none" }} />
+      <canvas ref={motionCanvasRef} style={{ display: "none" }} />
 
       {error && (
         <div className="banner warn" style={{ marginTop: 12 }}>
@@ -257,6 +337,19 @@ export function LiveMonitor({
           {pushState}
         </p>
       )}
+
+      <p className="meta" style={{ marginTop: 8 }}>
+        Pre-filtro de movimiento:{" "}
+        {motionDetectionEnabled ? (
+          <>
+            activo (umbral {motionThreshold}%)
+            {lastMotion !== null && <> · movimiento: {lastMotion.toFixed(1)}%</>}
+          </>
+        ) : (
+          "desactivado"
+        )}{" "}
+        · analizados: {stats.analyzed} · omitidos: {stats.skipped}
+      </p>
 
       {last && (
         <div className="card" style={{ marginTop: 14, background: "var(--panel-2)" }}>

@@ -37,6 +37,10 @@ export interface Camera {
   framesPerAnalysis: number;
   /** Separación en milisegundos entre fotogramas de la misma secuencia. */
   frameSpacingMs: number;
+  /** Pre-filtro de movimiento: solo analiza con IA si hay cambio entre cuadros. */
+  motionDetectionEnabled: boolean;
+  /** % de píxeles que deben cambiar entre cuadros para disparar el análisis (0-100). */
+  motionThreshold: number;
   createdAt: string;
 }
 

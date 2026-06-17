@@ -18,6 +18,8 @@ export default function NewCameraPage() {
   const [intervalSec, setIntervalSec] = useState(8);
   const [framesPerAnalysis, setFramesPerAnalysis] = useState(4);
   const [frameSpacingMs, setFrameSpacingMs] = useState(700);
+  const [motionDetectionEnabled, setMotionDetectionEnabled] = useState(true);
+  const [motionThreshold, setMotionThreshold] = useState(1.5);
   const [channels, setChannels] = useState<NotificationChannel[]>(["push"]);
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
@@ -55,6 +57,8 @@ export default function NewCameraPage() {
         captureIntervalSec: intervalSec,
         framesPerAnalysis,
         frameSpacingMs,
+        motionDetectionEnabled,
+        motionThreshold,
         notifications: { channels, email, phone, minSeverity },
       }),
     });
@@ -152,6 +156,35 @@ export default function NewCameraPage() {
           para entender el movimiento (p.ej. tomar algo y dirigirse a la salida), no
           imágenes sueltas. Más fotogramas = más contexto, pero más coste por ciclo.
         </p>
+
+        <div className="checkrow" style={{ marginTop: 14 }}>
+          <input
+            type="checkbox"
+            id="motion"
+            checked={motionDetectionEnabled}
+            onChange={(e) => setMotionDetectionEnabled(e.target.checked)}
+          />
+          <label htmlFor="motion" style={{ margin: 0 }}>
+            Pre-filtro de movimiento (solo llama a la IA si hay cambio en la escena)
+          </label>
+        </div>
+        {motionDetectionEnabled && (
+          <>
+            <label>Umbral de movimiento (% de píxeles que cambian)</label>
+            <input
+              type="number"
+              min={0.1}
+              max={100}
+              step={0.1}
+              value={motionThreshold}
+              onChange={(e) => setMotionThreshold(Number(e.target.value))}
+            />
+            <p className="meta" style={{ marginTop: 6 }}>
+              Más bajo = más sensible (analiza ante cambios pequeños). Valores típicos
+              1–3%. Ahorra tokens evitando analizar escenas estáticas.
+            </p>
+          </>
+        )}
 
         <label>Gravedad mínima para notificar</label>
         <select
