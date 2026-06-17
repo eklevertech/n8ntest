@@ -57,17 +57,26 @@ const REPORT_TOOL: Anthropic.Tool = {
 };
 
 const SYSTEM_PROMPT = `Eres un analista de seguridad para un sistema de videovigilancia.
-Recibes UN fotograma de una cámara y una lista de reglas en lenguaje natural.
-Determina, con criterio conservador, si el fotograma muestra una violación clara
-de alguna regla (por ejemplo robo, intrusión, merodeo, violencia).
+Recibes una SECUENCIA de fotogramas consecutivos de una misma cámara, capturados
+con pocos segundos (o fracciones de segundo) de diferencia y en orden cronológico,
+junto con una lista de reglas en lenguaje natural. Los fotogramas representan un
+fragmento corto de video: úsalos en conjunto para razonar sobre el MOVIMIENTO y la
+ACCIÓN que ocurre, no como imágenes aisladas.
+
+Determina, con criterio conservador, si la secuencia muestra una violación clara de
+alguna regla (por ejemplo: alguien toma mercancía y se desplaza hacia la salida,
+una persona entra en una zona restringida, merodeo, forcejeo o violencia).
 
 Principios:
-- Marca violationDetected=true solo cuando la evidencia visual sea clara. Ante la
-  duda, devuelve false con la confianza correspondiente: es preferible no alertar
-  que generar falsas alarmas.
-- Un solo fotograma tiene contexto limitado; sé honesto sobre la incertidumbre en
-  el campo confidence.
-- Describe lo que realmente ves, sin inventar detalles.
+- Aprovecha la dimensión temporal: compara qué cambia entre fotogramas (personas que
+  aparecen/desaparecen, objetos que se mueven o desaparecen, trayectorias hacia una
+  salida). Una acción sospechosa suele verse en la transición, no en un solo cuadro.
+- Marca violationDetected=true solo cuando la evidencia a lo largo de la secuencia
+  sea clara. Ante la duda, devuelve false con la confianza correspondiente: es
+  preferible no alertar que generar falsas alarmas.
+- En 'description' resume la acción observada a lo largo de la secuencia, no solo el
+  último fotograma. Sé honesto sobre la incertidumbre en 'confidence'.
+- No inventes detalles que no aparezcan en las imágenes.
 Siempre responde llamando a la herramienta report_observation.`;
 
 function rulesBlock(rules: Rule[]): string {
@@ -111,14 +120,45 @@ function coerce(input: Record<string, unknown>): DetectionResult {
   };
 }
 
-export async function analyzeFrame(
-  frameDataUrl: string,
+/** Máximo de fotogramas por análisis (límite defensivo de coste/tamaño). */
+export const MAX_FRAMES_PER_ANALYSIS = 8;
+
+export async function analyzeFrames(
+  frameDataUrls: string[],
   rules: Rule[],
 ): Promise<DetectionResult> {
   if (!process.env.ANTHROPIC_API_KEY) throw new MissingApiKeyError();
+  if (frameDataUrls.length === 0) {
+    throw new Error("Se requiere al menos un fotograma.");
+  }
 
-  const { mediaType, data } = parseDataUrl(frameDataUrl);
+  const frames = frameDataUrls.slice(0, MAX_FRAMES_PER_ANALYSIS);
   const client = new Anthropic();
+
+  // Construye el contenido: cada imagen precedida de una etiqueta cronológica.
+  const content: Anthropic.ContentBlockParam[] = [
+    {
+      type: "text",
+      text:
+        frames.length === 1
+          ? "Fotograma único de la cámara:"
+          : `Secuencia de ${frames.length} fotogramas consecutivos (en orden cronológico):`,
+    },
+  ];
+  frames.forEach((frame, i) => {
+    const { mediaType, data } = parseDataUrl(frame);
+    content.push({ type: "text", text: `Fotograma ${i + 1}/${frames.length}:` });
+    content.push({
+      type: "image",
+      source: { type: "base64", media_type: mediaType, data },
+    });
+  });
+  content.push({
+    type: "text",
+    text: `Reglas de vigilancia de esta cámara:\n${rulesBlock(
+      rules,
+    )}\n\nAnaliza la secuencia completa razonando sobre el movimiento y reporta el veredicto.`,
+  });
 
   const response = await client.messages.create({
     model: MODEL,
@@ -126,23 +166,7 @@ export async function analyzeFrame(
     system: SYSTEM_PROMPT,
     tools: [REPORT_TOOL],
     tool_choice: { type: "tool", name: "report_observation" },
-    messages: [
-      {
-        role: "user",
-        content: [
-          {
-            type: "image",
-            source: { type: "base64", media_type: mediaType, data },
-          },
-          {
-            type: "text",
-            text: `Reglas de vigilancia de esta cámara:\n${rulesBlock(
-              rules,
-            )}\n\nEvalúa el fotograma contra estas reglas y reporta el veredicto.`,
-          },
-        ],
-      },
-    ],
+    messages: [{ role: "user", content }],
   });
 
   const toolUse = response.content.find(

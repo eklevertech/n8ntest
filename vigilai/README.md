@@ -11,10 +11,10 @@ nueva (Next.js + TypeScript), independiente del resto del repo.
 
 ```
 Navegador (webcam o URL de video)
-   │  captura un fotograma cada N segundos (canvas → JPEG base64)
+   │  cada ciclo captura una SECUENCIA de N fotogramas (ráfaga, canvas → JPEG base64)
    ▼
-POST /api/cameras/:id/analyze
-   │  envía el frame a Claude (visión) junto con las reglas en lenguaje natural
+POST /api/cameras/:id/analyze  { frames: [...] }
+   │  envía la secuencia a Claude (visión) junto con las reglas en lenguaje natural
    ▼
 Veredicto estructurado { violación, regla, gravedad, confianza, descripción }
    │  si supera el umbral de gravedad y confianza…
@@ -25,9 +25,12 @@ Despacho de alertas → Email (Resend) · SMS (Twilio) · Push (Web Push/VAPID)
 Registro de eventos (panel + /events)
 ```
 
-- **Detección por IA:** `src/lib/detection.ts` usa el SDK oficial de Anthropic con
-  *structured outputs* (Zod) y entrada de imagen. Modelo por defecto
-  `claude-opus-4-8`; configurable con `DETECTION_MODEL`.
+- **Detección por IA (multi-frame):** `src/lib/detection.ts` usa el SDK oficial de
+  Anthropic con *forced tool use* (esquema fijo) y envía **varios fotogramas
+  consecutivos** en orden cronológico para que el modelo razone sobre el movimiento
+  y la acción, no sobre imágenes sueltas. Configurable por cámara
+  (`framesPerAnalysis`, `frameSpacingMs`). Modelo por defecto `claude-opus-4-8`;
+  configurable con `DETECTION_MODEL`.
 - **Notificaciones:** `src/lib/notify/*` — cada canal funciona con credenciales
   reales o en **modo simulación** (escribe en consola) si no las hay, para que el
   MVP corra sin cuentas de pago.

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { addEvent, getAccount, getCamera, newId, saveAccount } from "@/lib/store";
-import { analyzeFrame, MissingApiKeyError, severityAtLeast } from "@/lib/detection";
+import { analyzeFrames, MissingApiKeyError, severityAtLeast } from "@/lib/detection";
 import { dispatchAlert } from "@/lib/notify";
 import { planOf } from "@/lib/plans";
 import type { DetectionEvent } from "@/lib/types";
@@ -14,10 +14,17 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const camera = await getCamera(id);
   if (!camera) return NextResponse.json({ error: "Cámara no encontrada" }, { status: 404 });
 
-  const { frame } = (await req.json()) as { frame?: string };
-  if (!frame) return NextResponse.json({ error: "Falta el campo 'frame'." }, { status: 400 });
+  const body = (await req.json()) as { frame?: string; frames?: string[] };
+  // Acepta una secuencia ('frames') o un único fotograma ('frame', compatibilidad).
+  const frames = (body.frames ?? (body.frame ? [body.frame] : [])).filter(Boolean);
+  if (frames.length === 0) {
+    return NextResponse.json(
+      { error: "Falta el campo 'frames' (o 'frame')." },
+      { status: 400 },
+    );
+  }
 
-  // Control de límites del plan (cuota de frames).
+  // Control de límites del plan (cada imagen analizada cuenta en la cuota).
   const account = await getAccount();
   const plan = planOf(account.plan);
   if (account.framesAnalyzedThisMonth >= plan.maxFramesPerMonth) {
@@ -29,7 +36,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
   let result;
   try {
-    result = await analyzeFrame(frame, camera.rules);
+    result = await analyzeFrames(frames, camera.rules);
   } catch (err) {
     if (err instanceof MissingApiKeyError) {
       return NextResponse.json({ error: err.message, code: "no_api_key" }, { status: 503 });
@@ -40,7 +47,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     );
   }
 
-  account.framesAnalyzedThisMonth += 1;
+  account.framesAnalyzedThisMonth += frames.length;
   await saveAccount(account);
 
   // ¿Debe alertar? Violación + severidad y confianza por encima del umbral.
@@ -71,7 +78,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       severity: result.severity,
       confidence: result.confidence,
       description: result.description,
-      snapshot: shouldAlert ? frame : undefined,
+      // Guarda el último fotograma de la secuencia como captura representativa.
+      snapshot: shouldAlert ? frames[frames.length - 1] : undefined,
       notified,
     };
     await addEvent(event);

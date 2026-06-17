@@ -31,8 +31,12 @@ export interface Camera {
   location: string;
   rules: Rule[];
   notifications: NotificationConfig;
-  /** Cada cuántos segundos el navegador debe capturar y analizar un frame. */
+  /** Cada cuántos segundos el navegador ejecuta un ciclo de análisis. */
   captureIntervalSec: number;
+  /** Nº de fotogramas que se capturan por ciclo y se analizan juntos (contexto temporal). */
+  framesPerAnalysis: number;
+  /** Separación en milisegundos entre fotogramas de la misma secuencia. */
+  frameSpacingMs: number;
   createdAt: string;
 }
 

@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server";
 import { DEMO, createCamera, getAccount, listCameras } from "@/lib/store";
 import { planOf } from "@/lib/plans";
+import { MAX_FRAMES_PER_ANALYSIS } from "@/lib/detection";
 import type { Camera } from "@/lib/types";
+
+const clamp = (n: number, lo: number, hi: number) =>
+  Math.max(lo, Math.min(hi, Math.round(n)));
 
 export async function GET() {
   const cameras = await listCameras();
@@ -47,7 +51,9 @@ export async function POST(req: Request) {
       phone: body.notifications?.phone,
       minSeverity: body.notifications?.minSeverity ?? "medium",
     },
-    captureIntervalSec: Math.max(2, body.captureIntervalSec ?? 5),
+    captureIntervalSec: Math.max(2, body.captureIntervalSec ?? 8),
+    framesPerAnalysis: clamp(body.framesPerAnalysis ?? 4, 1, MAX_FRAMES_PER_ANALYSIS),
+    frameSpacingMs: clamp(body.frameSpacingMs ?? 700, 200, 3000),
   });
 
   return NextResponse.json({ camera }, { status: 201 });

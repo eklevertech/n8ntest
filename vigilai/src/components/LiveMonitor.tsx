@@ -20,12 +20,18 @@ const SEV_CLASS: Record<string, string> = {
   critical: "sev-critical",
 };
 
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
 export function LiveMonitor({
   cameraId,
   intervalSec,
+  framesPerAnalysis = 4,
+  frameSpacingMs = 700,
 }: {
   cameraId: string;
   intervalSec: number;
+  framesPerAnalysis?: number;
+  frameSpacingMs?: number;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -49,11 +55,11 @@ export function LiveMonitor({
     }
   }, []);
 
-  const captureAndAnalyze = useCallback(async () => {
-    if (busyRef.current) return; // evita solapamiento si la IA tarda
+  /** Captura un único fotograma del video como data URL JPEG, o null. */
+  const captureFrame = useCallback((): string | null => {
     const video = videoRef.current;
     const canvas = canvasRef.current;
-    if (!video || !canvas || video.readyState < 2) return;
+    if (!video || !canvas || video.readyState < 2) return null;
 
     const w = video.videoWidth || 640;
     const h = video.videoHeight || 360;
@@ -62,17 +68,39 @@ export function LiveMonitor({
     canvas.width = Math.round(w * scale);
     canvas.height = Math.round(h * scale);
     const ctx = canvas.getContext("2d");
-    if (!ctx) return;
+    if (!ctx) return null;
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    const frame = canvas.toDataURL("image/jpeg", 0.7);
+    return canvas.toDataURL("image/jpeg", 0.7);
+  }, []);
+
+  const captureAndAnalyze = useCallback(async () => {
+    if (busyRef.current) return; // evita solapamiento si la captura/IA tarda
+    const video = videoRef.current;
+    if (!video || video.readyState < 2) return;
 
     busyRef.current = true;
-    setStatus("Analizando…");
+    const n = Math.max(1, framesPerAnalysis);
     try {
+      // Captura una ráfaga de N fotogramas separados frameSpacingMs (contexto temporal).
+      const frames: string[] = [];
+      for (let i = 0; i < n; i++) {
+        const f = captureFrame();
+        if (f) frames.push(f);
+        if (i < n - 1) {
+          setStatus(`Capturando secuencia… ${frames.length}/${n}`);
+          await sleep(Math.max(100, frameSpacingMs));
+        }
+      }
+      if (frames.length === 0) {
+        busyRef.current = false;
+        return;
+      }
+
+      setStatus(`Analizando secuencia (${frames.length} fotogramas)…`);
       const res = await fetch(`/api/cameras/${cameraId}/analyze`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ frame }),
+        body: JSON.stringify({ frames }),
       });
       const data = (await res.json()) as AnalyzeResponse;
       if (!res.ok) {
@@ -96,7 +124,7 @@ export function LiveMonitor({
     } finally {
       busyRef.current = false;
     }
-  }, [cameraId]);
+  }, [cameraId, captureFrame, framesPerAnalysis, frameSpacingMs]);
 
   const start = useCallback(async () => {
     setError(null);

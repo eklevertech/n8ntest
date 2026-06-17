@@ -41,6 +41,8 @@ export default async function CameraPage({
           <LiveMonitor
             cameraId={camera.id}
             intervalSec={camera.captureIntervalSec}
+            framesPerAnalysis={camera.framesPerAnalysis}
+            frameSpacingMs={camera.frameSpacingMs}
           />
         </div>
         <div className="card">
@@ -65,6 +67,12 @@ export default async function CameraPage({
             Gravedad mínima: {camera.notifications.minSeverity}
             {camera.notifications.email && <> · {camera.notifications.email}</>}
             {camera.notifications.phone && <> · {camera.notifications.phone}</>}
+          </p>
+          <h3 style={{ marginTop: 16 }}>Análisis</h3>
+          <p className="meta">
+            Secuencia de <strong>{camera.framesPerAnalysis}</strong> fotograma(s) cada{" "}
+            <strong>{camera.captureIntervalSec}s</strong> · separación{" "}
+            {camera.frameSpacingMs} ms
           </p>
         </div>
       </div>
