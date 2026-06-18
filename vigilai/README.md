@@ -42,8 +42,10 @@ Registro de eventos (panel + /events)
   MVP corra sin cuentas de pago.
 - **Suscripciones/planes:** `src/lib/plans.ts` define los tiers (Free/Pro/Business)
   con límites de cámaras y de frames/mes, aplicados en las rutas de la API.
-- **Persistencia:** `src/lib/store.ts` usa un archivo JSON (`data/db.json`) para que
-  el prototipo arranque sin base de datos. Ver "Producción" abajo.
+- **Persistencia:** `src/lib/store/` tiene dos backends tras una misma interfaz
+  (`Repo`): **Postgres** (`pg.ts`) si defines `DATABASE_URL`, o un **almacén JSON**
+  local (`json.ts`) en caso contrario. El esquema Postgres se crea automáticamente
+  en el primer uso (referencia en `db/schema.sql`).
 
 ## Arranque rápido
 
@@ -72,8 +74,9 @@ Abre el panel, crea una cámara con sus reglas y pulsa **Iniciar monitoreo**
 
 - **Ingesta real de cámaras IP:** sustituir la captura en navegador por un pipeline
   servidor con RTSP/ONVIF → `ffmpeg` → extracción de frames (o WebRTC/HLS).
-- **Base de datos:** cambiar el almacén JSON por Postgres (p.ej. Prisma);
-  la interfaz de `store.ts` ya aísla esa capa.
+- **Base de datos:** soporte Postgres ya incluido (define `DATABASE_URL`). Para
+  multi-tenant real conviene migrar a un gestor de migraciones (p.ej. Prisma o
+  node-pg-migrate) en vez de la creación automática de esquema.
 - **Autenticación y multi-tenant:** hoy hay una única cuenta demo; añadir login
   (Auth.js/Clerk) y aislamiento por organización.
 - **Cobro:** integrar Stripe Billing (checkout + webhooks) para activar planes.
@@ -92,8 +95,9 @@ src/
     detection.ts        Llamada a Claude (visión + structured outputs)
     notify/             Adaptadores email / sms / push + dispatcher
     plans.ts            Planes de suscripción y límites
-    store.ts            Persistencia (JSON; reemplazable por Postgres)
+    store/              Persistencia: interfaz Repo + backends JSON y Postgres
     types.ts
+db/schema.sql           Esquema Postgres de referencia
   app/
     page.tsx            Panel
     pricing/            Planes
