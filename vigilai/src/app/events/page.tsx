@@ -1,10 +1,12 @@
 import { listEvents } from "@/lib/store";
+import { requirePageAuth } from "@/lib/require-auth";
 import { SeverityPill } from "@/components/SeverityPill";
 
 export const dynamic = "force-dynamic";
 
 export default async function EventsPage() {
-  const events = await listEvents(undefined, { limit: 100 });
+  const { account } = await requirePageAuth();
+  const events = await listEvents(account.id, { limit: 100 });
   return (
     <>
       <h1>Registro de eventos</h1>

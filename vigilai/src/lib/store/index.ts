@@ -1,7 +1,7 @@
 import { JsonRepo } from "./json";
 import { PgRepo } from "./pg";
-import { DEMO_ACCOUNT_ID, newId, type ListEventsOpts, type Repo } from "./types";
-import type { Account, Camera, DetectionEvent } from "../types";
+import { newId, type ListEventsOpts, type Repo } from "./types";
+import type { Account, Camera, DetectionEvent, PlanId, Session, User } from "../types";
 
 /**
  * Selecciona el backend de persistencia:
@@ -27,13 +27,30 @@ function createRepo(): Repo {
 
 const repo: Repo = globalThis.__vigilaiRepo ?? (globalThis.__vigilaiRepo = createRepo());
 
-export const DEMO = { accountId: DEMO_ACCOUNT_ID };
 export { newId };
 
-export const getAccount = (accountId?: string): Promise<Account> =>
-  repo.getAccount(accountId);
+// Cuentas
+export const createAccount = (data: { name: string; plan: PlanId }): Promise<Account> =>
+  repo.createAccount(data);
+export const getAccount = (accountId: string): Promise<Account> => repo.getAccount(accountId);
 export const saveAccount = (account: Account): Promise<void> => repo.saveAccount(account);
-export const listCameras = (accountId?: string): Promise<Camera[]> =>
+
+// Usuarios
+export const createUser = (data: Omit<User, "id" | "createdAt">): Promise<User> =>
+  repo.createUser(data);
+export const getUserByEmail = (email: string): Promise<User | undefined> =>
+  repo.getUserByEmail(email);
+export const getUserById = (id: string): Promise<User | undefined> => repo.getUserById(id);
+
+// Sesiones
+export const createSession = (userId: string, ttlMs: number): Promise<Session> =>
+  repo.createSession(userId, ttlMs);
+export const getSession = (token: string): Promise<Session | undefined> =>
+  repo.getSession(token);
+export const deleteSession = (token: string): Promise<void> => repo.deleteSession(token);
+
+// Cámaras
+export const listCameras = (accountId: string): Promise<Camera[]> =>
   repo.listCameras(accountId);
 export const getCamera = (id: string): Promise<Camera | undefined> => repo.getCamera(id);
 export const createCamera = (data: Omit<Camera, "id" | "createdAt">): Promise<Camera> =>
@@ -43,8 +60,10 @@ export const updateCamera = (
   patch: Partial<Camera>,
 ): Promise<Camera | undefined> => repo.updateCamera(id, patch);
 export const deleteCamera = (id: string): Promise<boolean> => repo.deleteCamera(id);
+
+// Eventos
 export const addEvent = (event: DetectionEvent): Promise<void> => repo.addEvent(event);
 export const listEvents = (
-  accountId?: string,
+  accountId: string,
   opts?: ListEventsOpts,
 ): Promise<DetectionEvent[]> => repo.listEvents(accountId, opts);

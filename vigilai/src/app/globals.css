@@ -326,6 +326,29 @@ textarea {
   border: 1px solid var(--border);
 }
 
+.navuser {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.linkbtn {
+  background: none;
+  border: none;
+  color: var(--muted);
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+  padding: 0;
+}
+.linkbtn:hover {
+  color: var(--text);
+}
+
+.authbox {
+  max-width: 420px;
+  margin: 40px auto;
+}
+
 .price {
   font-size: 32px;
   font-weight: 800;

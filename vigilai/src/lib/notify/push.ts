@@ -5,7 +5,8 @@ import type { SendResult } from "./email";
 
 /**
  * Web Push (notificaciones del navegador) vía protocolo VAPID.
- * Las suscripciones se guardan en data/push-subscriptions.json.
+ * Las suscripciones se guardan en data/push-subscriptions.json, asociadas a la
+ * cuenta (tenant) para no enviar alertas de una organización a otra.
  *
  * Genera un par de claves VAPID con:  npx web-push generate-vapid-keys
  * y colócalas en VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY.
@@ -14,7 +15,7 @@ import type { SendResult } from "./email";
 
 const SUBS_FILE = path.join(process.cwd(), "data", "push-subscriptions.json");
 
-type PushSub = webpush.PushSubscription;
+type StoredSub = webpush.PushSubscription & { accountId: string };
 
 let configured = false;
 
@@ -34,34 +35,42 @@ function ensureConfigured(): boolean {
   return true;
 }
 
-async function readSubs(): Promise<PushSub[]> {
+async function readSubs(): Promise<StoredSub[]> {
   try {
-    return JSON.parse(await fs.readFile(SUBS_FILE, "utf8")) as PushSub[];
+    return JSON.parse(await fs.readFile(SUBS_FILE, "utf8")) as StoredSub[];
   } catch {
     return [];
   }
 }
 
-async function writeSubs(subs: PushSub[]): Promise<void> {
+async function writeSubs(subs: StoredSub[]): Promise<void> {
   await fs.mkdir(path.dirname(SUBS_FILE), { recursive: true });
   await fs.writeFile(SUBS_FILE, JSON.stringify(subs, null, 2), "utf8");
 }
 
-export async function saveSubscription(sub: PushSub): Promise<void> {
+export async function saveSubscription(
+  accountId: string,
+  sub: webpush.PushSubscription,
+): Promise<void> {
   const subs = await readSubs();
   if (!subs.some((s) => s.endpoint === sub.endpoint)) {
-    subs.push(sub);
+    subs.push({ ...sub, accountId });
     await writeSubs(subs);
   }
 }
 
-export async function sendPush(title: string, body: string): Promise<SendResult> {
+export async function sendPush(
+  accountId: string,
+  title: string,
+  body: string,
+): Promise<SendResult> {
   if (!ensureConfigured()) {
-    console.log(`[push:sim] ${title} | ${body}`);
+    console.log(`[push:sim] (${accountId}) ${title} | ${body}`);
     return { ok: true, detail: "simulado (sin claves VAPID)" };
   }
 
-  const subs = await readSubs();
+  const all = await readSubs();
+  const subs = all.filter((s) => s.accountId === accountId);
   if (subs.length === 0) {
     return { ok: true, detail: "sin suscriptores push" };
   }
@@ -83,7 +92,7 @@ export async function sendPush(title: string, body: string): Promise<SendResult>
   );
 
   if (stale.length) {
-    await writeSubs(subs.filter((s) => !stale.includes(s.endpoint)));
+    await writeSubs(all.filter((s) => !stale.includes(s.endpoint)));
   }
 
   return { ok: sent > 0, detail: `enviado a ${sent}/${subs.length} dispositivos` };

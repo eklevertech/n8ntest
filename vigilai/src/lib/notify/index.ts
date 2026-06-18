@@ -45,7 +45,10 @@ export async function dispatchAlert(
     run("sms", sendSms(camera.notifications.phone, `${subject}\n${body}`));
   }
   if (channels.includes("push")) {
-    run("push", sendPush(subject, `${result.ruleViolated} — ${result.description}`));
+    run(
+      "push",
+      sendPush(camera.accountId, subject, `${result.ruleViolated} — ${result.description}`),
+    );
   }
 
   await Promise.all(tasks);

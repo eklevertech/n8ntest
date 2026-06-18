@@ -1,12 +1,16 @@
 import { Pool, type PoolClient } from "pg";
-import type { Account, Camera, DetectionEvent, NotificationConfig, Rule, Severity } from "../types";
-import {
-  DEMO_ACCOUNT_ID,
-  newId,
-  seedAccount,
-  type ListEventsOpts,
-  type Repo,
-} from "./types";
+import type {
+  Account,
+  Camera,
+  DetectionEvent,
+  NotificationConfig,
+  PlanId,
+  Rule,
+  Session,
+  Severity,
+  User,
+} from "../types";
+import { newId, type ListEventsOpts, type Repo } from "./types";
 
 /**
  * Backend de persistencia en Postgres (node-postgres).
@@ -35,6 +39,23 @@ CREATE TABLE IF NOT EXISTS accounts (
   frames_analyzed_this_month integer NOT NULL DEFAULT 0,
   period_start timestamptz NOT NULL DEFAULT now()
 );
+
+CREATE TABLE IF NOT EXISTS users (
+  id text PRIMARY KEY,
+  account_id text NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  email text NOT NULL,
+  name text NOT NULL DEFAULT '',
+  password_hash text NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS users_email_lower_idx ON users(lower(email));
+
+CREATE TABLE IF NOT EXISTS sessions (
+  token text PRIMARY KEY,
+  user_id text NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  expires_at timestamptz NOT NULL
+);
+CREATE INDEX IF NOT EXISTS sessions_user_idx ON sessions(user_id);
 
 CREATE TABLE IF NOT EXISTS cameras (
   id text PRIMARY KEY,
@@ -87,6 +108,35 @@ function toCamera(r: Record<string, unknown>): Camera {
   };
 }
 
+function toAccount(r: Record<string, unknown>): Account {
+  return {
+    id: r.id as string,
+    name: r.name as string,
+    plan: r.plan as PlanId,
+    framesAnalyzedThisMonth: r.frames_analyzed_this_month as number,
+    periodStart: (r.period_start as Date).toISOString(),
+  };
+}
+
+function toUser(r: Record<string, unknown>): User {
+  return {
+    id: r.id as string,
+    accountId: r.account_id as string,
+    email: r.email as string,
+    name: r.name as string,
+    passwordHash: r.password_hash as string,
+    createdAt: (r.created_at as Date).toISOString(),
+  };
+}
+
+function toSession(r: Record<string, unknown>): Session {
+  return {
+    token: r.token as string,
+    userId: r.user_id as string,
+    expiresAt: (r.expires_at as Date).toISOString(),
+  };
+}
+
 function toEvent(r: Record<string, unknown>): DetectionEvent {
   return {
     id: r.id as string,
@@ -112,22 +162,16 @@ export class PgRepo implements Repo {
     this.pool = makePool();
   }
 
-  /** Crea el esquema y siembra la cuenta demo una sola vez. */
+  /** Crea el esquema una sola vez. */
   private init(): Promise<void> {
     if (!this.ready) {
-      this.ready = (async () => {
-        await this.pool.query(SCHEMA);
-        const demo = seedAccount();
-        await this.pool.query(
-          `INSERT INTO accounts (id, name, plan, frames_analyzed_this_month, period_start)
-           VALUES ($1, $2, $3, $4, $5)
-           ON CONFLICT (id) DO NOTHING`,
-          [demo.id, demo.name, demo.plan, demo.framesAnalyzedThisMonth, demo.periodStart],
-        );
-      })().catch((err) => {
-        this.ready = null; // permite reintentar en la siguiente petición
-        throw err;
-      });
+      this.ready = this.pool.query(SCHEMA).then(
+        () => undefined,
+        (err) => {
+          this.ready = null; // permite reintentar en la siguiente petición
+          throw err;
+        },
+      );
     }
     return this.ready;
   }
@@ -143,17 +187,18 @@ export class PgRepo implements Repo {
     return res.rows as T[];
   }
 
-  async getAccount(accountId = DEMO_ACCOUNT_ID): Promise<Account> {
+  async createAccount(data: { name: string; plan: PlanId }): Promise<Account> {
+    const rows = await this.query(
+      `INSERT INTO accounts (id, name, plan) VALUES ($1, $2, $3) RETURNING *`,
+      [newId("acct"), data.name, data.plan],
+    );
+    return toAccount(rows[0]);
+  }
+
+  async getAccount(accountId: string): Promise<Account> {
     const rows = await this.query(`SELECT * FROM accounts WHERE id = $1`, [accountId]);
-    const r = rows[0];
-    if (!r) throw new Error(`Cuenta no encontrada: ${accountId}`);
-    return {
-      id: r.id as string,
-      name: r.name as string,
-      plan: r.plan as Account["plan"],
-      framesAnalyzedThisMonth: r.frames_analyzed_this_month as number,
-      periodStart: (r.period_start as Date).toISOString(),
-    };
+    if (!rows[0]) throw new Error(`Cuenta no encontrada: ${accountId}`);
+    return toAccount(rows[0]);
   }
 
   async saveAccount(account: Account): Promise<void> {
@@ -175,7 +220,49 @@ export class PgRepo implements Repo {
     );
   }
 
-  async listCameras(accountId = DEMO_ACCOUNT_ID): Promise<Camera[]> {
+  async createUser(data: Omit<User, "id" | "createdAt">): Promise<User> {
+    const rows = await this.query(
+      `INSERT INTO users (id, account_id, email, name, password_hash)
+       VALUES ($1,$2,$3,$4,$5) RETURNING *`,
+      [newId("usr"), data.accountId, data.email, data.name, data.passwordHash],
+    );
+    return toUser(rows[0]);
+  }
+
+  async getUserByEmail(email: string): Promise<User | undefined> {
+    const rows = await this.query(`SELECT * FROM users WHERE lower(email) = lower($1)`, [
+      email,
+    ]);
+    return rows[0] ? toUser(rows[0]) : undefined;
+  }
+
+  async getUserById(id: string): Promise<User | undefined> {
+    const rows = await this.query(`SELECT * FROM users WHERE id = $1`, [id]);
+    return rows[0] ? toUser(rows[0]) : undefined;
+  }
+
+  async createSession(userId: string, ttlMs: number): Promise<Session> {
+    const expiresAt = new Date(Date.now() + ttlMs).toISOString();
+    const rows = await this.query(
+      `INSERT INTO sessions (token, user_id, expires_at) VALUES ($1,$2,$3) RETURNING *`,
+      [newId("sess"), userId, expiresAt],
+    );
+    return toSession(rows[0]);
+  }
+
+  async getSession(token: string): Promise<Session | undefined> {
+    const rows = await this.query(
+      `SELECT * FROM sessions WHERE token = $1 AND expires_at > now()`,
+      [token],
+    );
+    return rows[0] ? toSession(rows[0]) : undefined;
+  }
+
+  async deleteSession(token: string): Promise<void> {
+    await this.query(`DELETE FROM sessions WHERE token = $1`, [token]);
+  }
+
+  async listCameras(accountId: string): Promise<Camera[]> {
     const rows = await this.query(
       `SELECT * FROM cameras WHERE account_id = $1 ORDER BY created_at`,
       [accountId],
@@ -270,10 +357,7 @@ export class PgRepo implements Repo {
     );
   }
 
-  async listEvents(
-    accountId = DEMO_ACCOUNT_ID,
-    opts: ListEventsOpts = {},
-  ): Promise<DetectionEvent[]> {
+  async listEvents(accountId: string, opts: ListEventsOpts = {}): Promise<DetectionEvent[]> {
     const limit = opts.limit ?? 100;
     const rows = opts.cameraId
       ? await this.query(

@@ -1,15 +1,16 @@
 import Link from "next/link";
-import { getAccount, listCameras, listEvents } from "@/lib/store";
+import { listCameras, listEvents } from "@/lib/store";
+import { requirePageAuth } from "@/lib/require-auth";
 import { planOf } from "@/lib/plans";
 import { SeverityPill } from "@/components/SeverityPill";
 
 export const dynamic = "force-dynamic";
 
 export default async function DashboardPage() {
-  const [account, cameras, events] = await Promise.all([
-    getAccount(),
-    listCameras(),
-    listEvents(undefined, { limit: 8 }),
+  const { account } = await requirePageAuth();
+  const [cameras, events] = await Promise.all([
+    listCameras(account.id),
+    listEvents(account.id, { limit: 8 }),
   ]);
   const plan = planOf(account.plan);
   const hasKey = Boolean(process.env.ANTHROPIC_API_KEY);
@@ -18,7 +19,7 @@ export default async function DashboardPage() {
     <>
       <h1>Panel de control</h1>
       <p className="sub">
-        Cuenta <strong>{account.name}</strong> · plan{" "}
+        Organización <strong>{account.name}</strong> · plan{" "}
         <span className="pill ok">{plan.name}</span>
       </p>
 

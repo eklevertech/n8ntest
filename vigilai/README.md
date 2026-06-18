@@ -40,6 +40,11 @@ Registro de eventos (panel + /events)
 - **Notificaciones:** `src/lib/notify/*` — cada canal funciona con credenciales
   reales o en **modo simulación** (escribe en consola) si no las hay, para que el
   MVP corra sin cuentas de pago.
+- **Autenticación y multi-tenant:** registro/login con email + contraseña
+  (hash `scrypt`, sin dependencias nativas) y sesiones por cookie httpOnly
+  respaldadas en el store (`src/lib/auth.ts`). Cada usuario pertenece a una
+  **cuenta/organización**; todas las cámaras, eventos, plan y cuota se scopean por
+  la cuenta de la sesión, y cada acceso a una cámara verifica la propiedad.
 - **Suscripciones/planes:** `src/lib/plans.ts` define los tiers (Free/Pro/Business)
   con límites de cámaras y de frames/mes, aplicados en las rutas de la API.
 - **Persistencia:** `src/lib/store/` tiene dos backends tras una misma interfaz
@@ -56,8 +61,9 @@ cp .env.example .env.local      # añade tu ANTHROPIC_API_KEY
 npm run dev                     # http://localhost:3000
 ```
 
-Abre el panel, crea una cámara con sus reglas y pulsa **Iniciar monitoreo**
-(usa la webcam o pega la URL de un MP4/HLS).
+Crea una cuenta en **/signup** (elige cualquier plan, no hay cobro), entra al
+panel, crea una cámara con sus reglas y pulsa **Iniciar monitoreo** (usa la webcam
+o pega la URL de un MP4/HLS).
 
 > Web Push y la webcam requieren un contexto seguro: `localhost` funciona; en otro
 > host necesitas HTTPS.
@@ -77,8 +83,11 @@ Abre el panel, crea una cámara con sus reglas y pulsa **Iniciar monitoreo**
 - **Base de datos:** soporte Postgres ya incluido (define `DATABASE_URL`). Para
   multi-tenant real conviene migrar a un gestor de migraciones (p.ej. Prisma o
   node-pg-migrate) en vez de la creación automática de esquema.
-- **Autenticación y multi-tenant:** hoy hay una única cuenta demo; añadir login
-  (Auth.js/Clerk) y aislamiento por organización.
+- **Autenticación y multi-tenant:** ya incluido (email+contraseña, sesiones por
+  cookie, aislamiento por organización). Endurecer para producción: rate-limiting
+  de login, verificación de email, recuperación de contraseña, invitar varios
+  usuarios por organización y roles/permisos. Para SSO/empresa, integrar Auth.js o
+  un IdP. Las contraseñas usan `scrypt`; revisar parámetros y políticas.
 - **Cobro:** integrar Stripe Billing (checkout + webhooks) para activar planes.
 - **Coste/latencia de IA:** el pre-filtro de movimiento ya reserva la llamada al VLM
   para escenas con cambios. A mayor escala, considerar además `claude-haiku-4-5` /
@@ -92,11 +101,16 @@ Abre el panel, crea una cámara con sus reglas y pulsa **Iniciar monitoreo**
 ```
 src/
   lib/
-    detection.ts        Llamada a Claude (visión + structured outputs)
+    auth.ts             Hash de contraseñas (scrypt) + sesiones por cookie
+    require-auth.ts     Guard de páginas (redirige a /login)
+    detection.ts        Llamada a Claude (visión + forced tool use)
     notify/             Adaptadores email / sms / push + dispatcher
     plans.ts            Planes de suscripción y límites
     store/              Persistencia: interfaz Repo + backends JSON y Postgres
     types.ts
+  app/
+    login/ signup/      Autenticación
+    api/auth/           Rutas signup / login / logout
 db/schema.sql           Esquema Postgres de referencia
   app/
     page.tsx            Panel

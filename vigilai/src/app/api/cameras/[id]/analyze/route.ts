@@ -1,18 +1,24 @@
 import { NextResponse } from "next/server";
 import { addEvent, getAccount, getCamera, newId, saveAccount } from "@/lib/store";
+import { getCurrentAuth } from "@/lib/auth";
 import { analyzeFrames, MissingApiKeyError, severityAtLeast } from "@/lib/detection";
 import { dispatchAlert } from "@/lib/notify";
 import { planOf } from "@/lib/plans";
 import type { DetectionEvent } from "@/lib/types";
 
 /**
- * Recibe un frame (data URL base64) del navegador, lo analiza con la IA contra
- * las reglas de la cámara y, si procede, dispara las notificaciones.
+ * Recibe una secuencia de frames (data URLs base64) del navegador, la analiza con
+ * la IA contra las reglas de la cámara y, si procede, dispara las notificaciones.
  */
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const auth = await getCurrentAuth();
+  if (!auth) return NextResponse.json({ error: "No autenticado" }, { status: 401 });
+
   const { id } = await params;
   const camera = await getCamera(id);
-  if (!camera) return NextResponse.json({ error: "Cámara no encontrada" }, { status: 404 });
+  if (!camera || camera.accountId !== auth.account.id) {
+    return NextResponse.json({ error: "Cámara no encontrada" }, { status: 404 });
+  }
 
   const body = (await req.json()) as { frame?: string; frames?: string[] };
   // Acepta una secuencia ('frames') o un único fotograma ('frame', compatibilidad).
@@ -25,7 +31,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   }
 
   // Control de límites del plan (cada imagen analizada cuenta en la cuota).
-  const account = await getAccount();
+  const account = await getAccount(auth.account.id);
   const plan = planOf(account.plan);
   if (account.framesAnalyzedThisMonth >= plan.maxFramesPerMonth) {
     return NextResponse.json(

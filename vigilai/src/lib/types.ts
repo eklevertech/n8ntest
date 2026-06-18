@@ -69,3 +69,22 @@ export interface Account {
   framesAnalyzedThisMonth: number;
   periodStart: string;
 }
+
+export interface User {
+  id: string;
+  accountId: string;
+  email: string;
+  name: string;
+  /** Hash scrypt en formato "saltHex:hashHex". Nunca se expone al cliente. */
+  passwordHash: string;
+  createdAt: string;
+}
+
+/** Usuario sin el hash de contraseña, seguro para enviar al cliente. */
+export type SafeUser = Omit<User, "passwordHash">;
+
+export interface Session {
+  token: string;
+  userId: string;
+  expiresAt: string;
+}

@@ -11,6 +11,23 @@ CREATE TABLE IF NOT EXISTS accounts (
   period_start timestamptz NOT NULL DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS users (
+  id text PRIMARY KEY,
+  account_id text NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  email text NOT NULL,
+  name text NOT NULL DEFAULT '',
+  password_hash text NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS users_email_lower_idx ON users(lower(email));
+
+CREATE TABLE IF NOT EXISTS sessions (
+  token text PRIMARY KEY,
+  user_id text NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  expires_at timestamptz NOT NULL
+);
+CREATE INDEX IF NOT EXISTS sessions_user_idx ON sessions(user_id);
+
 CREATE TABLE IF NOT EXISTS cameras (
   id text PRIMARY KEY,
   account_id text NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
@@ -44,7 +61,4 @@ CREATE TABLE IF NOT EXISTS events (
 CREATE INDEX IF NOT EXISTS events_account_created_idx ON events(account_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS events_camera_created_idx ON events(camera_id, created_at DESC);
 
--- Cuenta de demostración (idempotente).
-INSERT INTO accounts (id, name, plan)
-VALUES ('acct_demo', 'Cuenta de demostración', 'pro')
-ON CONFLICT (id) DO NOTHING;
+-- No se siembran cuentas: se crean al registrarse (signup).

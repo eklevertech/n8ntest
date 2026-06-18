@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { DEMO, createCamera, getAccount, listCameras } from "@/lib/store";
+import { createCamera, listCameras } from "@/lib/store";
+import { getCurrentAuth } from "@/lib/auth";
 import { planOf } from "@/lib/plans";
 import { MAX_FRAMES_PER_ANALYSIS } from "@/lib/detection";
 import type { Camera } from "@/lib/types";
@@ -8,16 +9,20 @@ const clamp = (n: number, lo: number, hi: number) =>
   Math.max(lo, Math.min(hi, Math.round(n)));
 
 export async function GET() {
-  const cameras = await listCameras();
+  const auth = await getCurrentAuth();
+  if (!auth) return NextResponse.json({ error: "No autenticado" }, { status: 401 });
+  const cameras = await listCameras(auth.account.id);
   return NextResponse.json({ cameras });
 }
 
 export async function POST(req: Request) {
-  const body = (await req.json()) as Partial<Camera>;
-  const account = await getAccount();
-  const plan = planOf(account.plan);
+  const auth = await getCurrentAuth();
+  if (!auth) return NextResponse.json({ error: "No autenticado" }, { status: 401 });
 
-  const existing = await listCameras();
+  const body = (await req.json()) as Partial<Camera>;
+  const plan = planOf(auth.account.plan);
+
+  const existing = await listCameras(auth.account.id);
   if (existing.length >= plan.maxCameras) {
     return NextResponse.json(
       {
@@ -36,7 +41,7 @@ export async function POST(req: Request) {
   const channels = requested.filter((c) => plan.channels.includes(c));
 
   const camera = await createCamera({
-    accountId: DEMO.accountId,
+    accountId: auth.account.id,
     name: body.name.trim(),
     location: body.location?.trim() || "Sin ubicación",
     rules: (body.rules ?? []).map((r, i) => ({

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getCamera, listEvents } from "@/lib/store";
+import { requirePageAuth } from "@/lib/require-auth";
 import { LiveMonitor } from "@/components/LiveMonitor";
 import { SeverityPill } from "@/components/SeverityPill";
 
@@ -11,10 +12,11 @@ export default async function CameraPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
+  const { account } = await requirePageAuth();
   const { id } = await params;
   const camera = await getCamera(id);
-  if (!camera) notFound();
-  const events = await listEvents(undefined, { cameraId: id, limit: 20 });
+  if (!camera || camera.accountId !== account.id) notFound();
+  const events = await listEvents(account.id, { cameraId: id, limit: 20 });
   const hasKey = Boolean(process.env.ANTHROPIC_API_KEY);
 
   return (
