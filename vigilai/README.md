@@ -44,13 +44,16 @@ Registro de eventos (panel + /events)
   (hash `scrypt`, sin dependencias nativas) y sesiones por cookie httpOnly
   respaldadas en el store (`src/lib/auth.ts`). Cada usuario pertenece a una
   **cuenta/organización**; todas las cámaras, eventos, plan y cuota se scopean por
-  la cuenta de la sesión, y cada acceso a una cámara verifica la propiedad.
+  la cuenta de la sesión, y cada acceso a una cámara verifica la propiedad. El
+  login y el registro tienen **rate-limiting** por IP (`src/lib/rate-limit.ts`).
 - **Suscripciones/planes:** `src/lib/plans.ts` define los tiers (Free/Pro/Business)
   con límites de cámaras y de frames/mes, aplicados en las rutas de la API.
 - **Persistencia:** `src/lib/store/` tiene dos backends tras una misma interfaz
   (`Repo`): **Postgres** (`pg.ts`) si defines `DATABASE_URL`, o un **almacén JSON**
-  local (`json.ts`) en caso contrario. El esquema Postgres se crea automáticamente
-  en el primer uso (referencia en `db/schema.sql`).
+  local (`json.ts`) en caso contrario. El esquema Postgres se gestiona con
+  **migraciones** (`db/migrations/*.sql`), aplicadas automáticamente en el primer
+  uso y también con `npm run migrate` (registradas en `schema_migrations`, con
+  advisory lock para evitar carreras entre instancias).
 
 ## Arranque rápido
 
@@ -80,14 +83,14 @@ o pega la URL de un MP4/HLS).
 
 - **Ingesta real de cámaras IP:** sustituir la captura en navegador por un pipeline
   servidor con RTSP/ONVIF → `ffmpeg` → extracción de frames (o WebRTC/HLS).
-- **Base de datos:** soporte Postgres ya incluido (define `DATABASE_URL`). Para
-  multi-tenant real conviene migrar a un gestor de migraciones (p.ej. Prisma o
-  node-pg-migrate) en vez de la creación automática de esquema.
-- **Autenticación y multi-tenant:** ya incluido (email+contraseña, sesiones por
-  cookie, aislamiento por organización). Endurecer para producción: rate-limiting
-  de login, verificación de email, recuperación de contraseña, invitar varios
-  usuarios por organización y roles/permisos. Para SSO/empresa, integrar Auth.js o
-  un IdP. Las contraseñas usan `scrypt`; revisar parámetros y políticas.
+- **Base de datos:** soporte Postgres con migraciones versionadas ya incluido
+  (`DATABASE_URL`, `npm run migrate`). Si el esquema crece mucho, valorar un gestor
+  dedicado (Prisma, node-pg-migrate) y migraciones con *down*/rollback.
+- **Autenticación y multi-tenant:** ya incluido (email+contraseña con `scrypt`,
+  sesiones por cookie, aislamiento por organización, rate-limiting de login/registro).
+  Backlog de endurecimiento: verificación de email, recuperación de contraseña,
+  varios usuarios por organización con roles/permisos, y SSO/IdP (Auth.js) para
+  empresa. El rate-limiting es en memoria: para multi-instancia, respaldarlo en Redis.
 - **Cobro:** integrar Stripe Billing (checkout + webhooks) para activar planes.
 - **Coste/latencia de IA:** el pre-filtro de movimiento ya reserva la llamada al VLM
   para escenas con cambios. A mayor escala, considerar además `claude-haiku-4-5` /
@@ -103,15 +106,17 @@ src/
   lib/
     auth.ts             Hash de contraseñas (scrypt) + sesiones por cookie
     require-auth.ts     Guard de páginas (redirige a /login)
+    rate-limit.ts       Rate limiter en memoria (login/registro)
     detection.ts        Llamada a Claude (visión + forced tool use)
     notify/             Adaptadores email / sms / push + dispatcher
     plans.ts            Planes de suscripción y límites
-    store/              Persistencia: interfaz Repo + backends JSON y Postgres
+    store/              Persistencia: interfaz Repo + backends JSON/Postgres + migrate
     types.ts
   app/
     login/ signup/      Autenticación
     api/auth/           Rutas signup / login / logout
-db/schema.sql           Esquema Postgres de referencia
+db/migrations/          Migraciones SQL (fuente de verdad del esquema)
+scripts/migrate.mjs     Runner de migraciones (npm run migrate)
   app/
     page.tsx            Panel
     pricing/            Planes

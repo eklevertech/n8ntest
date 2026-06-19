@@ -1,7 +1,4 @@
--- Esquema de referencia para el backend Postgres de VigilAI.
--- La app también crea estas tablas automáticamente en el primer uso
--- (ver src/lib/store/pg.ts). Puedes aplicarlo a mano con:
---   psql "$DATABASE_URL" -f db/schema.sql
+-- 0001_init: esquema inicial de VigilAI.
 
 CREATE TABLE IF NOT EXISTS accounts (
   id text PRIMARY KEY,
@@ -60,5 +57,3 @@ CREATE TABLE IF NOT EXISTS events (
 );
 CREATE INDEX IF NOT EXISTS events_account_created_idx ON events(account_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS events_camera_created_idx ON events(camera_id, created_at DESC);
-
--- No se siembran cuentas: se crean al registrarse (signup).
