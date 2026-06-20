@@ -1,5 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
-import type { Rule, Severity } from "./types";
+import type { Camera, Rule, Severity } from "./types";
 
 /**
  * Motor de detección: envía un frame del video a Claude (visión) junto con las
@@ -194,4 +194,28 @@ const SEVERITY_RANK: Record<Severity, number> = {
 
 export function severityAtLeast(value: Severity, min: Severity): boolean {
   return SEVERITY_RANK[value] >= SEVERITY_RANK[min];
+}
+
+/**
+ * Decide si un veredicto debe disparar una notificación, aplicando los mismos
+ * umbrales que usa el producto: hay violación, la severidad alcanza el mínimo
+ * configurado en la cámara y la confianza supera el menor `minConfidence` de las
+ * reglas activas (con 60 como valor por defecto si no hay reglas activas).
+ *
+ * Se extrae aquí para que la ruta /analyze y el harness de validación compartan
+ * exactamente la misma lógica y no se desincronicen.
+ */
+export function shouldAlert(
+  result: DetectionResult,
+  camera: Pick<Camera, "rules" | "notifications">,
+): boolean {
+  const minConfidence = Math.min(
+    ...camera.rules.filter((r) => r.enabled).map((r) => r.minConfidence),
+    101,
+  );
+  return (
+    result.violationDetected &&
+    severityAtLeast(result.severity, camera.notifications.minSeverity) &&
+    result.confidence >= (Number.isFinite(minConfidence) ? minConfidence : 60)
+  );
 }

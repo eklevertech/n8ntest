@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { addEvent, getAccount, getCamera, newId, saveAccount } from "@/lib/store";
 import { getCurrentAuth } from "@/lib/auth";
-import { analyzeFrames, MissingApiKeyError, severityAtLeast } from "@/lib/detection";
+import { analyzeFrames, MissingApiKeyError, shouldAlert } from "@/lib/detection";
 import { dispatchAlert } from "@/lib/notify";
 import { planOf } from "@/lib/plans";
 import type { DetectionEvent } from "@/lib/types";
@@ -57,17 +57,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   await saveAccount(account);
 
   // ¿Debe alertar? Violación + severidad y confianza por encima del umbral.
-  const minConfidence = Math.min(
-    ...camera.rules.filter((r) => r.enabled).map((r) => r.minConfidence),
-    101,
-  );
-  const shouldAlert =
-    result.violationDetected &&
-    severityAtLeast(result.severity, camera.notifications.minSeverity) &&
-    result.confidence >= (Number.isFinite(minConfidence) ? minConfidence : 60);
+  const alerted = shouldAlert(result, camera);
 
   let notified: DetectionEvent["notified"] = [];
-  if (shouldAlert) {
+  if (alerted) {
     notified = await dispatchAlert(camera, result);
   }
 
@@ -85,11 +78,11 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       confidence: result.confidence,
       description: result.description,
       // Guarda el último fotograma de la secuencia como captura representativa.
-      snapshot: shouldAlert ? frames[frames.length - 1] : undefined,
+      snapshot: alerted ? frames[frames.length - 1] : undefined,
       notified,
     };
     await addEvent(event);
   }
 
-  return NextResponse.json({ result, alerted: shouldAlert, notified });
+  return NextResponse.json({ result, alerted, notified });
 }

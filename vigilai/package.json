@@ -9,7 +9,11 @@
     "start": "next start -p 3000",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
-    "migrate": "node scripts/migrate.mjs"
+    "migrate": "node scripts/migrate.mjs",
+    "test": "node --test validation/metrics.test.mjs",
+    "validate": "node --experimental-strip-types validation/run.ts",
+    "validate:mock": "node --experimental-strip-types validation/run.ts --manifest validation/dataset/synthetic/manifest.json --mock",
+    "validate:gen": "node validation/dataset/synthetic/generate.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.68.0",

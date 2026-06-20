@@ -11,3 +11,10 @@ next-env.d.ts
 .env
 .env.local
 .env*.local
+
+# Validación: artefactos generados y footage/manifiestos reales (privados)
+/validation/report.json
+/validation/dataset/synthetic/frames/
+/validation/dataset/synthetic/manifest.json
+/validation/dataset/manifest.json
+/validation/dataset/clips/

@@ -1,0 +1,44 @@
+{
+  "//": "Plantilla de manifiesto para validación con footage REAL. Copia este archivo a manifest.json, coloca tus frames y completa el ground truth. Las rutas de 'frames' son relativas a la ubicación de ESTE archivo.",
+  "cases": [
+    {
+      "id": "hurto-pasillo-3",
+      "description": "Cliente toma un producto del estante y lo guarda en su mochila, luego se dirige a la salida sin pasar por caja.",
+      "frames": [
+        "clips/hurto-pasillo-3/f1.jpg",
+        "clips/hurto-pasillo-3/f2.jpg",
+        "clips/hurto-pasillo-3/f3.jpg",
+        "clips/hurto-pasillo-3/f4.jpg"
+      ],
+      "rules": [
+        {
+          "id": "r1",
+          "description": "Avisar si alguien toma mercancía y se dirige a la salida sin pagar.",
+          "minConfidence": 60,
+          "enabled": true
+        }
+      ],
+      "minSeverity": "low",
+      "expect": { "violation": true, "minSeverity": "medium" }
+    },
+    {
+      "id": "cliente-normal-1",
+      "description": "Cliente recorre el pasillo, mira productos y sigue de largo. Sin incidente.",
+      "frames": [
+        "clips/cliente-normal-1/f1.jpg",
+        "clips/cliente-normal-1/f2.jpg",
+        "clips/cliente-normal-1/f3.jpg"
+      ],
+      "rules": [
+        {
+          "id": "r1",
+          "description": "Avisar si alguien toma mercancía y se dirige a la salida sin pagar.",
+          "minConfidence": 60,
+          "enabled": true
+        }
+      ],
+      "minSeverity": "low",
+      "expect": { "violation": false }
+    }
+  ]
+}
