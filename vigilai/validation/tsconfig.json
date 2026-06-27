@@ -1,0 +1,11 @@
+{
+  "//": "Config aparte para el harness de validación: se ejecuta con el stripping de tipos de Node, por eso permite importar con extensión .ts explícita.",
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+    "plugins": []
+  },
+  "include": ["run.ts", "../src/lib/detection.ts", "../src/lib/types.ts"],
+  "exclude": []
+}

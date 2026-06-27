@@ -1,0 +1,20 @@
+node_modules
+.next
+out
+build
+dist
+*.tsbuildinfo
+next-env.d.ts
+
+# Datos locales del prototipo (almacén JSON) y secretos
+/data
+.env
+.env.local
+.env*.local
+
+# Validación: artefactos generados y footage/manifiestos reales (privados)
+/validation/report.json
+/validation/dataset/synthetic/frames/
+/validation/dataset/synthetic/manifest.json
+/validation/dataset/manifest.json
+/validation/dataset/clips/
